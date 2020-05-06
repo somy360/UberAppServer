@@ -13,14 +13,26 @@ import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * 
+ * @author Alexandra and Graeme
+ *
+ */
 public class Server {
 
 	// Global attributes.
 	private static final int port = 40138;
+	
 	//HashMap of user names and location of valid driver. 
 	private HashMap<String,String>  validClientsDrivers= new HashMap<String,String>();
-	private ArrayList<ClientHandler> allClients = new ArrayList<>();
-	private ExecutorService pool = Executors.newFixedThreadPool(10);
+	//Hashmap stores valid Drivers and their corresponding ClientHandlers (so we can call them later)
+	private HashMap<String,ClientHandler> validDriverMap= new HashMap<String,ClientHandler>();
+	//ArrayList of all Drivers
+	private ArrayList<ClientHandler> driverClients = new ArrayList<>();
+	
+	//for executing threads
+	private ExecutorService pool = Executors.newFixedThreadPool(100);
+	
 	private ServerSocket serverSocket;
 
 	/** Constructor initialises global attributes and method to listen for the clients.*/
@@ -33,55 +45,106 @@ public class Server {
 		}
 	}
 
-	/**Initialising server socket.*/
+	/**Initialising server socket
+	 * 
+	 * @throws IOException
+	 */
 	private void initialise() throws IOException {
 		serverSocket = new ServerSocket(port);
 	}
 
-	/** Accepting a clients. Making client threads. Adding the client to the pool of threads.
-	 * Initialises method to make a list of valid drivers.*/
+	/**
+	 * Accepting a clients. Making client threads. Adding the client to the pool of threads.
+	 * Initialises method to make a list of valid drivers.
+	 * 
+	 * @throws IOException
+	 */
 	private void clientListener() throws IOException {
 		while(true) {
+
+			//program pauses here and waits for a client to connect
 			Socket clientSocket = serverSocket.accept();
 			ClientHandler clientThread = new ClientHandler(clientSocket);
 			pool.execute(clientThread);
-			allClients.add(clientThread); 
+			
 			//Pauses this thread for one second to allow the other threads to complete. 
 			try{
 				Thread.sleep(1000);
 			}catch(Exception e) {
 				e.printStackTrace();
 			}
-			makeListOfValidDrivers();
-		}
-	}
 
+			//if the current clientThread is a ride notification, then send notification
+			if(clientThread.checkForRide()) {
 
-	/**Make a list of the drivers that have the same location than the passenger.*/
-	public void makeListOfValidDrivers(){
-		for(int i=0; i<allClients.size();i++){
-			//Glasgow location was put just for testing purposes. 
-			if(allClients.get(i).getLocation().equals("Glasgow")){
-				//Hash map with user names as IDs and locations as values.
-				//We have chosen a hashmap due to time complexity. We will use it for retrieving drivers in future updates.  
-				validClientsDrivers.put(allClients.get(i).getUserName(), allClients.get(i).getLocation());
+				sendNotification(clientThread);
+			}else {
+
+				//check user type equals driver then add to list
+				if(!identifyUserType(clientThread)) {
+					driverClients.add(clientThread); 
+				}
+
+				else {
+					makeListOfValidDrivers(clientThread.getLocation());
+					clientThread.writeToClient(validClientsDrivers);
+
+				}
 			}
 		}
+	}
 
-		//Print just for testing purposes. 
-		//		System.out.println("Array of all clients");
-		//		for(ClientHandler temp:allClients) {
-		//			System.out.println(temp);	
-		//		}
-		//
-		//		System.out.println("Valid drivers with location Glasgow");
-		//
-		//		for (String temp:validClientsDrivers.keySet()) {
-		//			System.out.println(temp + " " + validClientsDrivers.get(temp));	
-		//		}
 
+
+
+	/**
+	 * Identify passengers from drivers.
+	 * 
+	 * @param clientThread a clientThread.
+	 * @return true if passenger, false if driver.
+	 */
+	public boolean identifyUserType(ClientHandler clientThread) {
+
+		if(clientThread.getUserType().equals("Passenger")) {
+			return true;
+		}else {
+			return false;
+		}
 
 	}
 
+	/**
+	 * Make a list of the drivers that have the same location than the passenger.
+	 * Loops through list of all drivers adds ones with same location as the parameter to the HashMaps
+	 * 
+	 * @param passengerLocation passengers location
+	 */
+	public void makeListOfValidDrivers(String passengerLocation){
+		for(int i=0; i<driverClients.size();i++){
+			
+			if(driverClients.get(i).getLocation().equals(passengerLocation)&&driverClients.get(i).connectedUser()==true){
+				
+				//Hash map with user names as IDs and locations as values.
+				//We have chosen a hashmap due to time complexity. We will use it for retrieving drivers in future updates.  
+				validClientsDrivers.put(driverClients.get(i).getUserName(), driverClients.get(i).getLocation());
+
+				//store the clientThreads of the drivers
+				validDriverMap.put(driverClients.get(i).getUserName(),driverClients.get(i));
+			}
+		}
+	}
+	
+	/**
+	 * Send a notification to the selected driver.
+	 * Gets the correct clientThread from the hashmap and sends the message to them
+	 * 
+	 * @param clientThread
+	 */
+	public void sendNotification(ClientHandler clientThread){
+
+		if(validDriverMap.containsKey(clientThread.getSelectedDriver())) {
+			validDriverMap.get(clientThread.getSelectedDriver()).writeBackToDriver(clientThread.getLocation(), clientThread.getUserName(), clientThread.getPassengerDestination());
+		}
+	}
 }
 
