@@ -11,3 +11,7 @@ A version of Uber we created as a practice project. This is the server side prog
 ### In AWS
 * Open an EC2 instance in AWS
 * Compile and run the program in the terminal
+
+  javac Main.java
+
+  java Main
